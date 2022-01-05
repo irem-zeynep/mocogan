@@ -190,8 +190,6 @@ def train_gi(fake_images):
     return loss_generator
 
 def train_gv(fake_videos):
-    dis_v.zero_grad()
-
     fake_labels = dis_v(fake_videos.detach())
 
     label.resize_(fake_videos.size(0)).fill_(1)
