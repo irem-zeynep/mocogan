@@ -184,12 +184,12 @@ def train_g(fake_images, fake_videos):
     gen_i.zero_grad()
     gru.zero_grad()
     
-    fake_labels_v = dis_v(fake_videos.detach())
+    fake_labels_v = dis_v(fake_videos)
 
     label.resize_(fake_videos.size(0)).fill_(1)
     ones_v = Variable(label)
     
-    fake_labels_i = dis_i(fake_images.detach())
+    fake_labels_i = dis_i(fake_images)
 
     label.resize_(fake_images.size(0)).fill_(1)
     ones_i = Variable(label)
