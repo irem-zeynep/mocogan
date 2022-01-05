@@ -34,13 +34,11 @@ batch_size = args.batch_size
 n_iter     = args.niter
 pre_train  = args.pre_train
 
-
 seed = 0
 torch.manual_seed(seed)
 np.random.seed(seed)
 if cuda == True:
     torch.cuda.set_device(0)
-
 
 ''' prepare dataset '''
 current_path = os.path.dirname(__file__)
@@ -50,7 +48,6 @@ videos = [ skvideo.io.vread(file, outputdict={"-pix_fmt": "gray"}) for file in f
 print(videos[0].shape)
 # transpose each video to (nc, n_frames, img_size, img_size), and devide by 255
 videos = [ video.transpose(3, 0, 1, 2) / 255.0 for video in videos ]
-
 
 ''' prepare video sampling '''
 n_videos = len(videos)
@@ -62,7 +59,6 @@ def trim(video):
     end = start + T
     return video[:, start:end, :, :]
    
-
 # for input noises to generate fake videof
 # note that noises are trimmed randomly from n_frames to T for efficiency
 def trim_noise(noise):
@@ -81,7 +77,6 @@ def random_choice():
 
 # video length distribution
 video_lengths = [video.shape[1] for video in videos]
-
 
 ''' set models '''
 img_size = 96
@@ -184,22 +179,57 @@ else:
     logFile.write("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}\n").format(T, batch_size, nc, ngf, ndf, d_C, d_M)
 
 ''' calc grad of models '''
-def bp_i(inputs, y, retain=False):
-    label.resize_(inputs.size(0)).fill_(y)
-    labelv = Variable(label)
-    outputs = dis_i(inputs)
-    err = criterion(outputs, labelv)
-    err.backward(retain_graph=retain)
-    return err.data, outputs.data.mean()
+def train_gi(fake_images):
+    fake_labels = dis_i(fake_images.detach())
 
-def bp_v(inputs, y, retain=False):
-    label.resize_(inputs.size(0)).fill_(y)
-    labelv = Variable(label)
-    outputs = dis_v(inputs)
-    err = criterion(outputs, labelv)
-    err.backward(retain_graph=retain)
-    return err.data, outputs.data.mean()
+    label.resize_(fake_images.size(0)).fill(1)
+    ones = Variable(label)
+    
+    loss_generator = criterion(fake_labels, ones)
+    return loss_generator
 
+def train_gv(fake_videos):
+    dis_v.zero_grad()
+
+    fake_labels = dis_v(fake_videos.detach())
+
+    label.resize_(fake_videos.size(0)).fill_(1)
+    ones = Variable(label)
+    
+    loss_generator = criterion(fake_labels, ones)
+    
+    return loss_generator
+    
+def train_g(fake_images, fake_videos):
+    gen_i.zero_grad()
+    gru.zero_grad()
+    
+    loss_generator = train_gi(fake_images) +  train_gv(fake_videos)
+    loss_generator.backward()
+
+    optim_Gi.step()
+    optim_GRU.step()
+
+    return loss_generator.data
+
+def train_d(discriminator, optimizer, real_input, fake_input ):
+    discriminator.zero_grad()
+
+    real_labels = discriminator(real_input)
+    fake_labels = discriminator(fake_input.detach())
+
+    label.resize_(real_input.size(0)).fill_(1)
+    ones = Variable(label)
+
+    label.resize_(fake_input.size(0)).fill_(0)
+    zeros = Variable(label)
+    
+    loss_discriminator = criterion(real_labels, ones) + criterion(fake_labels, zeros)
+    
+    loss_discriminator.backward()
+
+    optimizer.step()
+    return loss_discriminator.data, fake_labels.data.mean()
 
 ''' gen input noise for fake video '''
 def gen_z(n_frames):
@@ -248,32 +278,16 @@ for epoch in range(1, n_iter+1):
     fake_img = fake_videos[:, :, np.random.randint(0, n_frames), :, :]
     
     fake_videos = torch.stack([torch.as_tensor(trim(video)) for video in fake_videos])
-  
-  
  
     ''' train discriminators '''
     # video
-    dis_v.zero_grad()
-    err_Dv_real, Dv_real_mean = bp_v(real_videos, 0.9)
-    err_Dv_fake, Dv_fake_mean = bp_v(fake_videos.detach(), 0)
-    err_Dv = err_Dv_real + err_Dv_fake
-    optim_Dv.step()
-    # image
-    dis_i.zero_grad()
-    err_Di_real, Di_real_mean = bp_i(real_img, 0.9)
-    err_Di_fake, Di_fake_mean = bp_i(fake_img.detach(), 0)
-    err_Di = err_Di_real + err_Di_fake
-    optim_Di.step()
+    err_Dv, Dv_fake_mean = train_d(dis_v, optim_Dv, real_videos, fake_videos)
 
+    # image
+    err_Di, Di_fake_mean = train_d(dis_i, optim_Di, real_img, fake_img)
+    
     ''' train generators '''
-    gen_i.zero_grad()
-    gru.zero_grad()
-    # video. notice retain=True for back prop twice
-    err_Gv, _ = bp_v(fake_videos, 0.9, retain=True)
-    # images
-    err_Gi, _ = bp_i(fake_img, 0.9)
-    optim_Gi.step()
-    optim_GRU.step()
+    err_G = train_g(fake_img, fake_videos)
 
     logFile.write('%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n'% ( err_Di, err_Dv, err_Gi, err_Gv, Di_real_mean, Di_fake_mean, Dv_real_mean, Dv_fake_mean))
     logFile.flush()
