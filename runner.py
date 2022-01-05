@@ -12,16 +12,19 @@ args       = parser.parse_args()
 pre_train  = args.pre_train
 
 while True:
+	print("Running...")
 	start_time = time.time()
 	numberFile = open("lastTrainedNumber.txt", "r")
 	iterationNumber = numberFile.readline()
 	numberFile.close()
 	if pre_train:
+		print("Running command " + ("python3 train.py --niter 10000 --pre-train {}").format(iterationNumber))
 		os.system(("python3 train.py --niter 10000 --pre-train {}").format(iterationNumber))
 	else:
 		iterationNumber = 0
+		print("Running command python3 train.py --niter 10000")
 		os.system("python3 train.py --niter 10000")
-	
+	print("Finished")
 	logFile.write(("Start time: {}, lastTrainNumber: {}\n").format(start_time, iterationNumber))
 	logFile.flush()
 	
