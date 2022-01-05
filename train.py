@@ -181,21 +181,11 @@ else:
 
 ''' calc grad of models '''
 def train_gi(fake_images):
-    fake_labels = dis_i(fake_images.detach())
 
-    label.resize_(fake_images.size(0)).fill_(1)
-    ones = Variable(label)
-    
-    loss_generator = criterion(fake_labels, ones)
     return loss_generator
 
 def train_gv(fake_videos):
-    fake_labels = dis_v(fake_videos.detach())
 
-    label.resize_(fake_videos.size(0)).fill_(1)
-    ones = Variable(label)
-    
-    loss_generator = criterion(fake_labels, ones)
     
     return loss_generator
     
@@ -203,13 +193,23 @@ def train_g(fake_images, fake_videos):
     gen_i.zero_grad()
     gru.zero_grad()
     
-    loss_generator = train_gi(fake_images) +  train_gv(fake_videos)
+    fake_labels_v = dis_v(fake_videos.detach())
+
+    label.resize_(fake_videos.size(0)).fill_(1)
+    ones_v = Variable(label)
+    
+    fake_labels_i = dis_i(fake_images.detach())
+
+    label.resize_(fake_images.size(0)).fill_(1)
+    ones_i = Variable(label)
+    
+    loss_generator = criterion(fake_labels_v, ones_v) + criterion(fake_labels_i, ones_i)
     loss_generator.backward()
 
     optim_Gi.step()
     optim_GRU.step()
 
-    return loss_generator.data
+    return loss_generator
 
 def train_d(discriminator, optimizer, real_input, fake_input ):
     discriminator.zero_grad()
