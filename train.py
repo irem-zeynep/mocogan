@@ -176,7 +176,7 @@ else:
     os.rename('logs.csv', fileName)
     logFile = open('logs.csv', "a") 
     img_size = 96
-    logFile.write("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}\n").format(T, batch_size, nc, ngf, ndf, d_C, d_M)
+    logFile.write(("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}\n").format(T, batch_size, nc, ngf, ndf, d_C, d_M))
     logFile.write("Image Discriminator Loss, Video Discriminator Loss , Genrator Loss, Image Discriminator Fake Mean, Video Discriminator Fake Mean\n")
 
 ''' calc grad of models '''
