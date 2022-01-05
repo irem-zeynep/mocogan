@@ -181,7 +181,7 @@ else:
     os.rename('logs.csv', fileName)
     logFile = open('logs.csv', "a") 
     img_size = 96
-    logFile.write("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}\n".format(T, batch_size, nc, ngf, ndf, d_C, d_M)
+    logFile.write("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}\n").format(T, batch_size, nc, ngf, ndf, d_C, d_M)
 
 ''' calc grad of models '''
 def bp_i(inputs, y, retain=False):
