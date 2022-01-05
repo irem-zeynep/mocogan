@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from torch import nn, optim
 from torch.autograd import Variable
+from datetime import datetime
 
 from models import Discriminator_I, Discriminator_V, Generator_I, GRU
 
@@ -19,12 +20,12 @@ parser.add_argument('--cuda', type=int, default=1,
                      help='set -1 when you use cpu')
 parser.add_argument('--ngpu', type=int, default=1,
                      help='set the number of gpu you use')
-parser.add_argument('--batch-size', type=int, default=16,
-                     help='set batch_size, default: 16')
+parser.add_argument('--batch-size', type=int, default=3,
+                     help='set batch_size, default: 3')
 parser.add_argument('--niter', type=int, default=120000,
                      help='set num of iterations, default: 120000')
-parser.add_argument('--pre-train', type=int, default=-1,
-                     help='set 1 when you use pre-trained models')
+parser.add_argument('--pre-train', type=int, default=0,
+                     help='set order of pre-trained model you want to use')
 
 args       = parser.parse_args()
 cuda       = args.cuda
@@ -42,7 +43,6 @@ if cuda == True:
 
 
 ''' prepare dataset '''
-
 current_path = os.path.dirname(__file__)
 resized_path = os.path.join(current_path, 'resized_data')
 files = glob.glob(resized_path+'/*')
@@ -52,17 +52,17 @@ videos = [ video.transpose(3, 0, 1, 2) / 255.0 for video in videos ]
 
 
 ''' prepare video sampling '''
-
 n_videos = len(videos)
-T = 16
+T = 128
 
 # for true video
 def trim(video):
     start = np.random.randint(0, video.shape[1] - (T+1))
     end = start + T
     return video[:, start:end, :, :]
+   
 
-# for input noises to generate fake video
+# for input noises to generate fake videof
 # note that noises are trimmed randomly from n_frames to T for efficiency
 def trim_noise(noise):
     start = np.random.randint(0, noise.size(1) - (T+1))
@@ -83,7 +83,6 @@ video_lengths = [video.shape[1] for video in videos]
 
 
 ''' set models '''
-
 img_size = 96
 nc = 3
 ndf = 64 # from dcgan
@@ -103,7 +102,6 @@ gru.initWeight()
 
 
 ''' prepare for train '''
-
 label = torch.FloatTensor()
 
 def timeSince(since):
@@ -114,23 +112,29 @@ def timeSince(since):
     m = math.floor(s / 60) - h*60 - d*24*60
     s = s - m*60 - h*(60**2) - d*24*(60**2)
     return '%dd %dh %dm %ds' % (d, h, m, s)
+    
+def formatCurrentTime():
+    now = datetime.now() 
+    return now.strftime("%m/%d/%Y_%H:%M")
 
 trained_path = os.path.join(current_path, 'trained_models')
-def checkpoint(model, optimizer, epoch):
-    filename = os.path.join(trained_path, '%s_epoch-%d' % (model.__class__.__name__, epoch))
+
+def checkpoint(model, optimizer, epoch): 
+    modelIndex = pre_train + epoch
+    filename = os.path.join(trained_path, '%s_epoch-%d' % (model.__class__.__name__, modelIndex))
     torch.save(model.state_dict(), filename + '.model')
     torch.save(optimizer.state_dict(), filename + '.state')
 
 def save_video(fake_video, epoch):
+    videoIndex = pre_train + epoch
     outputdata = fake_video * 255
     outputdata = outputdata.astype(np.uint8)
     dir_path = os.path.join(current_path, 'generated_videos')
-    file_path = os.path.join(dir_path, 'fakeVideo_epoch-%d.mp4' % epoch)
+    file_path = os.path.join(dir_path, 'fakeVideo_epoch-%d.mp4' % videoIndex)
     skvideo.io.vwrite(file_path, outputdata)
 
 
 ''' adjust to cuda '''
-
 if cuda == True:
     dis_i.cuda()
     dis_v.cuda()
@@ -150,27 +154,31 @@ optim_GRU = optim.Adam(gru.parameters(),   lr=lr, betas=betas)
 
 
 ''' use pre-trained models '''
-
-if pre_train == True:
-    dis_i.load_state_dict(torch.load(trained_path + '/Discriminator_I.model'))
-    dis_v.load_state_dict(torch.load(trained_path + '/Discriminator_V.model'))
-    gen_i.load_state_dict(torch.load(trained_path + '/Generator_I.model'))
-    gru.load_state_dict(torch.load(trained_path + '/GRU.model'))
-    optim_Di.load_state_dict(torch.load(trained_path + '/Discriminator_I.state'))
-    optim_Dv.load_state_dict(torch.load(trained_path + '/Discriminator_V.state'))
-    optim_Gi.load_state_dict(torch.load(trained_path + '/Generator_I.state'))
-    optim_GRU.load_state_dict(torch.load(trained_path + '/GRU.state'))
-
+if pre_train > 0:
+    dis_i.load_state_dict(torch.load(trained_path + '/Discriminator_I_epoch-{}.model'.format(pre_train)))
+    dis_v.load_state_dict(torch.load(trained_path + '/Discriminator_V_epoch-{}.model'.format(pre_train)))
+    gen_i.load_state_dict(torch.load(trained_path + '/Generator_I_epoch-{}.model'.format(pre_train)))
+    gru.load_state_dict(torch.load(trained_path + '/GRU_epoch-{}.model'.format(pre_train)))
+    optim_Di.load_state_dict(torch.load(trained_path + '/Discriminator_I_epoch-{}.state'.format(pre_train)))
+    optim_Dv.load_state_dict(torch.load(trained_path + '/Discriminator_V_epoch-{}.state'.format(pre_train)))
+    optim_Gi.load_state_dict(torch.load(trained_path + '/Generator_I_epoch-{}.state'.format(pre_train)))
+    optim_GRU.load_state_dict(torch.load(trained_path + '/GRU_epoch-{}.state'.format(pre_train)))
+    logFile = open("logs.csv", "a")  # append mode
+else:
+    fileName = 'logs_{}.csv'.format(formatCurrentTime())
+    os.rename('logs.csv', fileName)
+    logFile = open(logs.csv, "a") 
+    img_size = 96
+    logFile.write("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}".format(T, batch_size, nc, ngf, ndf, d_C, d_M))
 
 ''' calc grad of models '''
-
 def bp_i(inputs, y, retain=False):
     label.resize_(inputs.size(0)).fill_(y)
     labelv = Variable(label)
     outputs = dis_i(inputs)
     err = criterion(outputs, labelv)
     err.backward(retain_graph=retain)
-    return err.data[0], outputs.data.mean()
+    return err.data, outputs.data.mean()
 
 def bp_v(inputs, y, retain=False):
     label.resize_(inputs.size(0)).fill_(y)
@@ -178,11 +186,10 @@ def bp_v(inputs, y, retain=False):
     outputs = dis_v(inputs)
     err = criterion(outputs, labelv)
     err.backward(retain_graph=retain)
-    return err.data[0], outputs.data.mean()
+    return err.data, outputs.data.mean()
 
 
 ''' gen input noise for fake video '''
-
 def gen_z(n_frames):
     z_C = Variable(torch.randn(batch_size, d_C))
     #  repeat z_C to (batch_size, n_frames, d_C)
@@ -216,16 +223,22 @@ for epoch in range(1, n_iter+1):
     n_frames = video_lengths[np.random.randint(0, n_videos)]
     Z = gen_z(n_frames)  # Z.size() => (batch_size, n_frames, nz, 1, 1)
     # trim => (batch_size, T, nz, 1, 1)
-    Z = trim_noise(Z)
+    #Z = trim_noise(Z)
     # generate videos
-    Z = Z.contiguous().view(batch_size*T, nz, 1, 1)
+    Z = Z.contiguous().view(batch_size*n_frames, nz, 1, 1)
     fake_videos = gen_i(Z)
-    fake_videos = fake_videos.view(batch_size, T, nc, img_size, img_size)
+    fake_videos = fake_videos.view(batch_size, n_frames, nc, img_size, img_size)
     # transpose => (batch_size, nc, T, img_size, img_size)
+    
     fake_videos = fake_videos.transpose(2, 1)
+    
     # img sampling
-    fake_img = fake_videos[:, :, np.random.randint(0, T), :, :]
-
+    fake_img = fake_videos[:, :, np.random.randint(0, n_frames), :, :]
+    
+    fake_videos = torch.stack([torch.as_tensor(trim(video)) for video in fake_videos])
+  
+  
+ 
     ''' train discriminators '''
     # video
     dis_v.zero_grad()
@@ -240,7 +253,6 @@ for epoch in range(1, n_iter+1):
     err_Di = err_Di_real + err_Di_fake
     optim_Di.step()
 
-
     ''' train generators '''
     gen_i.zero_grad()
     gru.zero_grad()
@@ -251,15 +263,19 @@ for epoch in range(1, n_iter+1):
     optim_Gi.step()
     optim_GRU.step()
 
-    if epoch % 100 == 0:
-        print('[%d/%d] (%s) Loss_Di: %.4f Loss_Dv: %.4f Loss_Gi: %.4f Loss_Gv: %.4f Di_real_mean %.4f Di_fake_mean %.4f Dv_real_mean %.4f Dv_fake_mean %.4f'
-              % (epoch, n_iter, timeSince(start_time), err_Di, err_Dv, err_Gi, err_Gv, Di_real_mean, Di_fake_mean, Dv_real_mean, Dv_fake_mean))
+   
+    logFile.write('%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f'% ( err_Di, err_Dv, err_Gi, err_Gv, Di_real_mean, Di_fake_mean, Dv_real_mean, Dv_fake_mean))
 
-    if epoch % 1000 == 0:
+    if  epoch % 100 == 0:
         save_video(fake_videos[0].data.cpu().numpy().transpose(1, 2, 3, 0), epoch)
 
-    if epoch % 10000 == 0:
+    if  epoch % 100 == 0:
+        numberFile = open("lastTrainedNumber.txt", "w")
+        numberFile.write(('{}').format(pre_train + epoch))
+        numberFile.close()
         checkpoint(dis_i, optim_Di, epoch)
         checkpoint(dis_v, optim_Dv, epoch)
         checkpoint(gen_i, optim_Gi, epoch)
         checkpoint(gru,   optim_GRU, epoch)
+
+logFile.close()
