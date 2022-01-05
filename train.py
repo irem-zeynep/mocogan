@@ -219,7 +219,7 @@ def train_d(discriminator, optimizer, real_input, fake_input ):
     loss_discriminator.backward()
 
     optimizer.step()
-    return loss_discriminator.data, fake_labels.data.mean()
+    return loss_discriminator, fake_labels.mean()
 
 ''' gen input noise for fake video '''
 def gen_z(n_frames):
