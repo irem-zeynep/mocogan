@@ -46,7 +46,8 @@ if cuda == True:
 current_path = os.path.dirname(__file__)
 resized_path = os.path.join(current_path, 'resized_data')
 files = glob.glob(resized_path+'/*')
-videos = [ skvideo.io.vread(file) for file in files ]
+videos = [ skvideo.io.vread(file, outputdict={"-pix_fmt": "gray"}) for file in files ]
+print(videos[0].shape)
 # transpose each video to (nc, n_frames, img_size, img_size), and devide by 255
 videos = [ video.transpose(3, 0, 1, 2) / 255.0 for video in videos ]
 
@@ -84,7 +85,7 @@ video_lengths = [video.shape[1] for video in videos]
 
 ''' set models '''
 img_size = 96
-nc = 3
+nc = 1
 ndf = 64 # from dcgan
 ngf = 64
 d_E = 10
@@ -115,7 +116,18 @@ def timeSince(since):
     
 def formatCurrentTime():
     now = datetime.now() 
-    return now.strftime("%m/%d/%Y_%H:%M")
+
+    return now.strftime("%m_%d_%Y_%H_%M")
+    
+
+if pre_train <= 0:
+    renamedModelDir = ('trained_models_{}').format(formatCurrentTime())
+    renamedVideoDir = ('generated_videos_{}').format(formatCurrentTime())
+    os.rename('trained_models', renamedModelDir)
+    os.rename('generated_videos', renamedVideoDir)
+    os.mkdir('trained_models')
+    os.mkdir('generated_videos')
+    
 
 trained_path = os.path.join(current_path, 'trained_models')
 
@@ -165,11 +177,11 @@ if pre_train > 0:
     optim_GRU.load_state_dict(torch.load(trained_path + '/GRU_epoch-{}.state'.format(pre_train)))
     logFile = open("logs.csv", "a")  # append mode
 else:
-    fileName = 'logs_{}.csv'.format(formatCurrentTime())
+    fileName = 'logs_{}.csv'.format(formatCurrentTime()).replace('/', '_').replace(':', '_')
     os.rename('logs.csv', fileName)
-    logFile = open(logs.csv, "a") 
+    logFile = open('logs.csv', "a") 
     img_size = 96
-    logFile.write("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}".format(T, batch_size, nc, ngf, ndf, d_C, d_M))
+    logFile.write("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}\n".format(T, batch_size, nc, ngf, ndf, d_C, d_M)
 
 ''' calc grad of models '''
 def bp_i(inputs, y, retain=False):
@@ -263,8 +275,8 @@ for epoch in range(1, n_iter+1):
     optim_Gi.step()
     optim_GRU.step()
 
-   
-    logFile.write('%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f'% ( err_Di, err_Dv, err_Gi, err_Gv, Di_real_mean, Di_fake_mean, Dv_real_mean, Dv_fake_mean))
+    logFile.write('%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n'% ( err_Di, err_Dv, err_Gi, err_Gv, Di_real_mean, Di_fake_mean, Dv_real_mean, Dv_fake_mean))
+    logFile.flush()
 
     if  epoch % 100 == 0:
         save_video(fake_videos[0].data.cpu().numpy().transpose(1, 2, 3, 0), epoch)
