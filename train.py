@@ -180,15 +180,6 @@ else:
     logFile.write("Image Discriminator Loss, Video Discriminator Loss , Genrator Loss, Image Discriminator Fake Mean, Video Discriminator Fake Mean\n")
 
 ''' calc grad of models '''
-def train_gi(fake_images):
-
-    return loss_generator
-
-def train_gv(fake_videos):
-
-    
-    return loss_generator
-    
 def train_g(fake_images, fake_videos):
     gen_i.zero_grad()
     gru.zero_grad()
