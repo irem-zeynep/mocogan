@@ -3,9 +3,9 @@
 /.ipynb_checkpoints/
 /__pycache__/
 /raw_data/*
-/resized_data/*
-/trained_models/*
-/generated_videos/*
+*resized*/
+trained_models*/
+generated*/
 /test.ipynb
 !.gitkeep
 /sandbox
