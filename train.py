@@ -183,7 +183,7 @@ else:
 def train_gi(fake_images):
     fake_labels = dis_i(fake_images.detach())
 
-    label.resize_(fake_images.size(0)).fill(1)
+    label.resize_(fake_images.size(0)).fill_(1)
     ones = Variable(label)
     
     loss_generator = criterion(fake_labels, ones)
