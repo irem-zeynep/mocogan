@@ -177,6 +177,7 @@ else:
     logFile = open('logs.csv', "a") 
     img_size = 96
     logFile.write("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}\n").format(T, batch_size, nc, ngf, ndf, d_C, d_M)
+    logFile.write("Image Discriminator Loss, Video Discriminator Loss , Genrator Loss, Image Discriminator Fake Mean, Video Discriminator Fake Mean\n")
 
 ''' calc grad of models '''
 def train_gi(fake_images):
@@ -289,7 +290,7 @@ for epoch in range(1, n_iter+1):
     ''' train generators '''
     err_G = train_g(fake_img, fake_videos)
 
-    logFile.write('%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n'% ( err_Di, err_Dv, err_Gi, err_Gv, Di_real_mean, Di_fake_mean, Dv_real_mean, Dv_fake_mean))
+    logFile.write('%.4f,%.4f,%.4f,%.4f,%.4f\n'% (err_Di, err_Dv, err_G, Di_fake_mean, Dv_fake_mean))
     logFile.flush()
 
     if  epoch % 100 == 0:
