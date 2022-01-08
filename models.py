@@ -41,6 +41,7 @@ class Discriminator_I(nn.Module):
         return output.view(-1, 1).squeeze(1)
 
 
+
 class Discriminator_V(nn.Module):
     def __init__(self, nc=3, ndf=64, T=16, ngpu=1):
         super(Discriminator_V, self).__init__()

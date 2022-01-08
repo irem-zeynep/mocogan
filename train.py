@@ -30,8 +30,10 @@ args = parser.parse_args()
 cuda = args.cuda
 ngpu = args.ngpu
 batch_size = args.batch_size
+
 n_iter = args.niter
 pre_train = args.pre_train
+
 Th = torch
 seed = 0
 torch.manual_seed(seed)
@@ -93,7 +95,8 @@ hidden_size = 100  # guess
 d_C = 50
 d_M = d_E
 nz = d_C + d_M
-criterion = nn.BCEWithLogitsLoss()
+criterion_d = nn.BCELoss()
+criterion_g = nn.BCEWithLogitsLoss()
 
 dis_i = Discriminator_I(nc, ndf, ngpu=ngpu)
 dis_v = Discriminator_V(nc, ndf, T=T, ngpu=ngpu)
@@ -154,7 +157,7 @@ if cuda == True:
     dis_v.cuda()
     gen_i.cuda()
     gru.cuda()
-    criterion.cuda()
+    criterion_d.cuda()
     label = label.cuda()
 
 # setup optimizer
@@ -184,7 +187,9 @@ else:
     logFile.write(
         ("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}\n").format(T, batch_size, nc, ngf, ndf, d_C, d_M))
     logFile.write(
-        "Image Discriminator Loss, Video Discriminator Loss , Genrator Loss, Image Discriminator Fake Mean, Video Discriminator Fake Mean\n")
+        "Image Discriminator Loss, Video Discriminator Loss , Generator Loss, " +
+        "Image Discriminator Fake Mean, Image Discriminator Real Mean, " +
+        "Video Discriminator Fake Mean, Video Discriminator Real Mean \n")
 
 
 def ones_like(tensor, val=1.):
@@ -210,7 +215,7 @@ def train_g(fake_images, fake_videos):
 
     ones_i = ones_like(fake_labels_i)
 
-    loss_generator = criterion(fake_labels_v, ones_v) + criterion(fake_labels_i, ones_i)
+    loss_generator = criterion_g(fake_labels_v, ones_v) + criterion_g(fake_labels_i, ones_i)
     loss_generator.backward()
 
     optim_Gi.step()
@@ -228,12 +233,12 @@ def train_d(discriminator, optimizer, real_input, fake_input):
     ones = ones_like(real_labels)
     zeros = zeros_like(fake_labels)
 
-    loss_discriminator = criterion(real_labels, ones) + criterion(fake_labels, zeros)
+    loss_discriminator = criterion_d(real_labels, ones) + criterion_d(fake_labels, zeros)
 
     loss_discriminator.backward()
 
     optimizer.step()
-    return loss_discriminator, fake_labels.mean()
+    return loss_discriminator, fake_labels.mean(), real_labels.mean()
 
 
 ''' gen input noise for fake video '''
@@ -253,8 +258,6 @@ def gen_z(n_frames):
     z = torch.cat((z_M, z_C), 2)  # z.size() => (batch_size, n_frames, nz)
     return z.view(batch_size, n_frames, nz, 1, 1)
 
-
-def sample_videos():
 
 ''' train models '''
 
@@ -277,9 +280,23 @@ for epoch in range(1, n_iter + 1):
     optim_Gi.zero_grad()
     optim_Dv.zero_grad()
 
-    ''' prepare fake videos '''
     # note that n_frames is sampled from video length distribution
     n_frames = video_lengths[np.random.randint(0, n_videos)]
+
+    ''' prepare fake images '''
+    Z = gen_z(1)  # Z.size() => (batch_size, n_frames, nz, 1, 1)
+    Z = Z.contiguous().view(batch_size, nz, 1, 1)
+
+    fake_videos = gen_i(Z)
+    fake_videos = fake_videos.view(batch_size, 1, nc, img_size, img_size)
+    frameIndex = np.random.randint(0, n_frames)
+    fake_img = fake_videos.transpose(2, 1)[np.random.randint(0, batch_size)]
+
+    del fake_videos
+    # image
+    err_Di, Di_fake_mean, Di_real_mean = train_d(dis_i, optim_Di, real_img, fake_img)
+
+    ''' prepare fake videos '''
     Z = gen_z(n_frames)  # Z.size() => (batch_size, n_frames, nz, 1, 1)
     Z = Z.contiguous().view(batch_size * n_frames, nz, 1, 1)
 
@@ -288,27 +305,16 @@ for epoch in range(1, n_iter + 1):
     fake_videos = fake_videos.transpose(2, 1)
     fake_videos = torch.stack([torch.as_tensor(trim(video)) for video in fake_videos])
 
-    ''' prepare fake images '''
-    n_frames = video_lengths[np.random.randint(0, n_videos)]
-    Z = gen_z(n_frames)  # Z.size() => (batch_size, n_frames, nz, 1, 1)
-    Z = Z.contiguous().view(batch_size * n_frames, nz, 1, 1)
-
-    fake_img = gen_i(Z)
-    fake_img = fake_videos.view(batch_size, 1, nc, img_size, img_size)
-    fake_img = fake_videos.transpose(2, 1)
-
-
     ''' train discriminators '''
     # video
-    err_Dv, Dv_fake_mean = train_d(dis_v, optim_Dv, real_videos, fake_videos)
-
-    # image
-    err_Di, Di_fake_mean = train_d(dis_i, optim_Di, real_img, fake_img)
+    err_Dv, Dv_fake_mean, Dv_real_mean = train_d(dis_v, optim_Dv, real_videos, fake_videos)
 
     ''' train generators '''
     err_G = train_g(fake_img, fake_videos)
 
-    logFile.write('%.4f,%.4f,%.4f,%.4f,%.4f\n' % (err_Di, err_Dv, err_G, Di_fake_mean, Dv_fake_mean))
+    logFile.write(
+        '%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n' % (err_Di, err_Dv, err_G, Di_fake_mean, Di_real_mean, Dv_fake_mean, Dv_real_mean))
+
     logFile.flush()
 
     if epoch % 100 == 0:
