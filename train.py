@@ -33,12 +33,14 @@ ngpu       = args.ngpu
 batch_size = args.batch_size
 n_iter     = args.niter
 pre_train  = args.pre_train
-
+T = torch
 seed = 0
 torch.manual_seed(seed)
 np.random.seed(seed)
 if cuda == True:
     torch.cuda.set_device(0)
+    T = torch.cuda
+
 
 ''' prepare dataset '''
 current_path = os.path.dirname(__file__)
@@ -88,7 +90,7 @@ hidden_size = 100 # guess
 d_C = 50
 d_M = d_E
 nz  = d_C + d_M
-criterion = nn.BCELoss()
+criterion = nn.BCEWithLogitsLoss()
 
 dis_i = Discriminator_I(nc, ndf, ngpu=ngpu)
 dis_v = Discriminator_V(nc, ndf, T=T, ngpu=ngpu)
@@ -179,6 +181,15 @@ else:
     logFile.write(("T: {}, batch: {}, nc: {}, ngf: {}, ndf: {}, d_C:{}, d_M:{}\n").format(T, batch_size, nc, ngf, ndf, d_C, d_M))
     logFile.write("Image Discriminator Loss, Video Discriminator Loss , Genrator Loss, Image Discriminator Fake Mean, Video Discriminator Fake Mean\n")
 
+
+    @staticmethod
+    def ones_like(tensor, val=1.):
+        return Variable(T.FloatTensor(tensor.size()).fill_(val), requires_grad=False)
+
+    @staticmethod
+    def zeros_like(tensor, val=0.):
+        return Variable(T.FloatTensor(tensor.size()).fill_(val), requires_grad=False)
+
 ''' calc grad of models '''
 def train_g(fake_images, fake_videos):
     gen_i.zero_grad()
@@ -186,13 +197,11 @@ def train_g(fake_images, fake_videos):
     
     fake_labels_v = dis_v(fake_videos)
 
-    label.resize_(fake_videos.size(0)).fill_(1)
-    ones_v = Variable(label)
+    ones_v = ones_like(fake_labels_v)
     
     fake_labels_i = dis_i(fake_images)
 
-    label.resize_(fake_images.size(0)).fill_(1)
-    ones_i = Variable(label)
+    ones_i = ones_like(fake_labels_i)
     
     loss_generator = criterion(fake_labels_v, ones_v) + criterion(fake_labels_i, ones_i)
     loss_generator.backward()
@@ -208,11 +217,8 @@ def train_d(discriminator, optimizer, real_input, fake_input ):
     real_labels = discriminator(real_input)
     fake_labels = discriminator(fake_input.detach())
 
-    label.resize_(real_input.size(0)).fill_(1)
-    ones = Variable(label)
-
-    label.resize_(fake_input.size(0)).fill_(0)
-    zeros = Variable(label)
+    ones = ones_like(real_labels)
+    zeros = zeros_like(fake_labels)
     
     loss_discriminator = criterion(real_labels, ones) + criterion(fake_labels, zeros)
     
@@ -279,7 +285,7 @@ for epoch in range(1, n_iter+1):
     ''' train generators '''
     err_G = train_g(fake_img, fake_videos)
 
-    logFile.write('%.4f,%.4f,%.4f,%.4f,%.4f\n'% (err_Di, err_Dv, err_G, Di_fake_mean, Dv_fake_mean))
+    logFile.write('%.4f,%.4f,%.4f,%.4f,%.4f\n'% (err_Di.data[0], err_Dv.data[0], err_G.data[0], Di_fake_mean, Dv_fake_mean))
     logFile.flush()
 
     if  epoch % 100 == 0:
