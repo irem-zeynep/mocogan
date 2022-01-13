@@ -90,13 +90,12 @@ img_size = 96
 nc = 1
 ndf = 64  # from dcgan
 ngf = 64
-d_E = 10
+d_E = video_lengths[0]
 hidden_size = 100  # guess
 d_C = 50
 d_M = d_E
 nz = d_C + d_M
-criterion_d = nn.BCELoss()
-criterion_g = nn.BCEWithLogitsLoss()
+criterion = nn.BCELoss()
 
 dis_i = Discriminator_I(nc, ndf, ngpu=ngpu)
 dis_v = Discriminator_V(nc, ndf, T=T, ngpu=ngpu)
@@ -157,7 +156,7 @@ if cuda == True:
     dis_v.cuda()
     gen_i.cuda()
     gru.cuda()
-    criterion_d.cuda()
+    criterion.cuda()
     label = label.cuda()
 
 # setup optimizer
@@ -215,7 +214,7 @@ def train_g(fake_images, fake_videos):
 
     ones_i = ones_like(fake_labels_i)
 
-    loss_generator = criterion_g(fake_labels_v, ones_v) + criterion_g(fake_labels_i, ones_i)
+    loss_generator = criterion(fake_labels_v, ones_v) + criterion(fake_labels_i, ones_i)
     loss_generator.backward()
 
     optim_Gi.step()
@@ -230,10 +229,10 @@ def train_d(discriminator, optimizer, real_input, fake_input):
     real_labels = discriminator(real_input)
     fake_labels = discriminator(fake_input.detach())
 
-    ones = ones_like(real_labels)
+    ones = ones_like(real_labels, 0.9)
     zeros = zeros_like(fake_labels)
 
-    loss_discriminator = criterion_d(real_labels, ones) + criterion_d(fake_labels, zeros)
+    loss_discriminator = criterion(real_labels, ones) + criterion(fake_labels, zeros)
 
     loss_discriminator.backward()
 
@@ -264,6 +263,10 @@ def gen_z(n_frames):
 start_time = time.time()
 
 for epoch in range(1, n_iter + 1):
+    gen_i.train()
+    dis_v.train()
+    dis_i.train()
+
     ''' prepare real images '''
     # real_videos.size() => (batch_size, nc, T, img_size, img_size)
     real_videos = random_choice()
@@ -273,28 +276,8 @@ for epoch in range(1, n_iter + 1):
     real_videos = Variable(real_videos)
     real_img = real_videos[:, :, np.random.randint(0, T), :, :]
 
-    gen_i.train()
-    dis_v.train()
-    dis_i.train()
-
-    optim_Gi.zero_grad()
-    optim_Dv.zero_grad()
-
     # note that n_frames is sampled from video length distribution
     n_frames = video_lengths[np.random.randint(0, n_videos)]
-
-    ''' prepare fake images '''
-    Z = gen_z(1)  # Z.size() => (batch_size, n_frames, nz, 1, 1)
-    Z = Z.contiguous().view(batch_size, nz, 1, 1)
-
-    fake_videos = gen_i(Z)
-    fake_videos = fake_videos.view(batch_size, 1, nc, img_size, img_size)
-    frameIndex = np.random.randint(0, n_frames)
-    fake_img = fake_videos.transpose(2, 1)[np.random.randint(0, batch_size)]
-
-    del fake_videos
-    # image
-    err_Di, Di_fake_mean, Di_real_mean = train_d(dis_i, optim_Di, real_img, fake_img)
 
     ''' prepare fake videos '''
     Z = gen_z(n_frames)  # Z.size() => (batch_size, n_frames, nz, 1, 1)
@@ -303,17 +286,24 @@ for epoch in range(1, n_iter + 1):
     fake_videos = gen_i(Z)
     fake_videos = fake_videos.view(batch_size, n_frames, nc, img_size, img_size)
     fake_videos = fake_videos.transpose(2, 1)
-    fake_videos = torch.stack([torch.as_tensor(trim(video)) for video in fake_videos])
+    frameIndex = np.random.randint(0, n_frames)
+    fake_img = fake_videos[:, :, frameIndex, :, :]
+
+    trimmed_fake_videos = torch.stack([torch.as_tensor(trim(video)) for video in fake_videos])
 
     ''' train discriminators '''
     # video
-    err_Dv, Dv_fake_mean, Dv_real_mean = train_d(dis_v, optim_Dv, real_videos, fake_videos)
+    err_Dv, Dv_fake_mean, Dv_real_mean = train_d(dis_v, optim_Dv, real_videos, trimmed_fake_videos)
+
+    # image
+    err_Di, Di_fake_mean, Di_real_mean = train_d(dis_i, optim_Di, real_img, fake_img)
 
     ''' train generators '''
-    err_G = train_g(fake_img, fake_videos)
+    err_G = train_g(fake_img, trimmed_fake_videos)
 
     logFile.write(
-        '%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n' % (err_Di, err_Dv, err_G, Di_fake_mean, Di_real_mean, Dv_fake_mean, Dv_real_mean))
+        '%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n' % (
+            err_Di, err_Dv, err_G, Di_fake_mean, Di_real_mean, Dv_fake_mean, Dv_real_mean))
 
     logFile.flush()
 
